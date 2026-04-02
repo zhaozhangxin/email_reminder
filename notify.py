@@ -1,22 +1,22 @@
 """
-notify.py — 通用邮件通知工具
+notify.py — General-purpose email notification tool
 
-用法一：直接调用函数
+Usage 1: Call functions directly
     from notify import send, notify_done, notify_error, notify_progress
 
-用法二：发送结果（DataFrame / 图片 / 文件附件）
+Usage 2: Send results (DataFrame / images / file attachments)
     from notify import send
-    send("结果", body="训练完成", dataframes={"最优配置": df}, attachments=["result.png"])
+    send("Results", body="Training done", dataframes={"Best config": df}, attachments=["result.png"])
 
-用法三：装饰器（函数结束/报错时自动发邮件）
+Usage 3: Decorator (auto-send email when function finishes or crashes)
     from notify import on_finish
 
-    @on_finish("模型训练")
+    @on_finish("Model training")
     def train():
         ...
 
-用法四：命令行快速发送
-    python notify.py "主题" "正文"
+Usage 4: Quick send from command line
+    python notify.py "subject" "body"
 """
 
 import os
@@ -30,7 +30,7 @@ from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email import encoders
 
-# ── 邮箱配置 ──────────────────────────────────────────────────────────────────
+# ── Email Configuration ──────────────────────────────────────────────────────
 _SMTP_HOST = 'smtp.gmail.com'
 _SMTP_PORT = 465
 _SENDER    = 'your-gmail@gmail.com'          # <-- Replace with your Gmail
@@ -38,33 +38,32 @@ _PASSWORD  = 'xxxx xxxx xxxx xxxx'           # <-- Replace with your 16-char App
 _RECIPIENT = 'your-email@example.com'        # <-- Replace with where you want to receive
 
 
-# ── 核心发送函数 ───────────────────────────────────────────────────────────────
+# ── Core Send Function ───────────────────────────────────────────────────────
 def send(subject: str,
          body: str = '',
          dataframes: dict = None,
          attachments: list = None,
          silent: bool = False) -> bool:
     """
-    发送邮件，支持 DataFrame 内嵌表格和文件附件。
+    Send an email with optional DataFrame tables and file attachments.
 
-    参数:
-        subject:     邮件主题
-        body:        正文（纯文本）
-        dataframes:  dict[标题, pd.DataFrame]，以 HTML 表格嵌入正文
-                     例: {"最优结果": df1, "所有试验": df2}
-        attachments: 文件路径列表，作为附件发送
-                     例: ["result.csv", "plot.png"]
-        silent:      True 时发送失败不抛异常，只打印警告
+    Args:
+        subject:     Email subject line
+        body:        Plain text body
+        dataframes:  dict[title, pd.DataFrame], embedded as HTML tables
+                     e.g. {"Best results": df1, "All trials": df2}
+        attachments: List of file paths to attach
+                     e.g. ["result.csv", "plot.png"]
+        silent:      If True, print warning on failure instead of raising
     """
     msg = MIMEMultipart('mixed')
     msg['From']    = _SENDER
     msg['To']      = _RECIPIENT
     msg['Subject'] = subject
 
-    # ── 正文：纯文本 + DataFrame HTML 表格 ────────────────────────────────────
+    # ── Body: plain text + DataFrame HTML tables ─────────────────────────────
     html_parts = []
     if body:
-        # 纯文本转 HTML（保留换行）
         html_parts.append(f'<pre style="font-family:monospace">{body}</pre>')
 
     if dataframes:
@@ -82,15 +81,15 @@ def send(subject: str,
                     f'{table_html}'
                 )
             except Exception as e:
-                html_parts.append(f'<p>[表格 "{title}" 渲染失败: {e}]</p>')
+                html_parts.append(f'<p>[Table "{title}" render failed: {e}]</p>')
 
     html_body = '<html><body>' + '\n'.join(html_parts) + '</body></html>'
     msg.attach(MIMEText(html_body, 'html', 'utf-8'))
 
-    # ── 附件 ──────────────────────────────────────────────────────────────────
+    # ── Attachments ──────────────────────────────────────────────────────────
     for path in (attachments or []):
         if not os.path.exists(path):
-            print(f'[notify] ⚠️ 附件不存在，跳过: {path}')
+            print(f'[notify] Warning: attachment not found, skipping: {path}')
             continue
         filename = os.path.basename(path)
         ext = os.path.splitext(filename)[1].lower()
@@ -107,61 +106,62 @@ def send(subject: str,
                 part.add_header('Content-Disposition', 'attachment', filename=filename)
             msg.attach(part)
         except Exception as e:
-            print(f'[notify] ⚠️ 附件 "{filename}" 处理失败: {e}')
+            print(f'[notify] Warning: failed to process attachment "{filename}": {e}')
 
-    # ── 发送 ──────────────────────────────────────────────────────────────────
+    # ── Send ─────────────────────────────────────────────────────────────────
     try:
         with smtplib.SMTP_SSL(_SMTP_HOST, _SMTP_PORT) as server:
             server.login(_SENDER, _PASSWORD)
             server.sendmail(_SENDER, _RECIPIENT, msg.as_string())
-        print(f'[notify] ✅ 邮件已发送: {subject}')
+        print(f'[notify] Email sent: {subject}')
         return True
     except Exception as e:
-        errmsg = f'[notify] ⚠️ 邮件发送失败: {e}'
+        errmsg = f'[notify] Failed to send email: {e}'
         if silent:
             print(errmsg)
             return False
         raise
 
 
-# ── 常用快捷函数 ───────────────────────────────────────────────────────────────
+# ── Shortcut Functions ───────────────────────────────────────────────────────
 def notify_done(task: str, details: str = '', silent: bool = True) -> bool:
-    """任务完成通知。"""
+    """Send a task completion notification."""
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    subject = f'[完成] {task} — {now}'
-    body = f'{task} 已完成\n时间: {now}\n\n{details}' if details else f'{task} 已完成\n时间: {now}'
+    subject = f'[Done] {task} — {now}'
+    body = f'{task} completed\nTime: {now}\n\n{details}' if details else f'{task} completed\nTime: {now}'
     return send(subject, body, silent=silent)
 
 
 def notify_error(task: str, error: Exception = None, details: str = '',
                  silent: bool = True) -> bool:
-    """错误/崩溃通知，自动附上 traceback。"""
+    """Send an error/crash notification with traceback."""
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    subject = f'[错误] {task} — {now}'
+    subject = f'[Error] {task} — {now}'
     tb = traceback.format_exc() if error is not None else ''
     body = '\n\n'.join(filter(None, [
-        f'{task} 运行出错\n时间: {now}',
+        f'{task} encountered an error\nTime: {now}',
         details,
-        f'异常信息:\n{tb}' if tb and tb.strip() != 'NoneType: None' else '',
+        f'Exception:\n{tb}' if tb and tb.strip() != 'NoneType: None' else '',
     ]))
     return send(subject, body, silent=silent)
 
 
 def notify_progress(task: str, message: str, silent: bool = True) -> bool:
-    """进度汇报。"""
+    """Send a progress update."""
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    subject = f'[进度] {task} — {now}'
-    return send(subject, f'{message}\n\n时间: {now}', silent=silent)
+    subject = f'[Progress] {task} — {now}'
+    return send(subject, f'{message}\n\nTime: {now}', silent=silent)
 
 
-# ── 装饰器 ────────────────────────────────────────────────────────────────────
+# ── Decorator ────────────────────────────────────────────────────────────────
 def on_finish(task: str, notify_on_error: bool = True, notify_on_success: bool = True,
               silent: bool = True):
     """
-    装饰器：函数正常结束时发"完成"邮件，抛异常时发"错误"邮件（并重新抛出）。
+    Decorator: sends a "done" email when the function finishes normally,
+    or an "error" email if it raises an exception (and re-raises it).
 
-    示例:
-        @on_finish("EBV 分类器训练")
+    Example:
+        @on_finish("Model training")
         def train():
             ...
     """
@@ -173,7 +173,7 @@ def on_finish(task: str, notify_on_error: bool = True, notify_on_success: bool =
                 result = func(*args, **kwargs)
                 if notify_on_success:
                     elapsed = (datetime.now() - start).total_seconds()
-                    notify_done(task, f'耗时: {elapsed:.1f} 秒', silent=silent)
+                    notify_done(task, f'Elapsed: {elapsed:.1f}s', silent=silent)
                 return result
             except Exception as e:
                 if notify_on_error:
@@ -183,11 +183,11 @@ def on_finish(task: str, notify_on_error: bool = True, notify_on_success: bool =
     return decorator
 
 
-# ── 命令行入口 ────────────────────────────────────────────────────────────────
+# ── Command Line Entry ───────────────────────────────────────────────────────
 if __name__ == '__main__':
     import sys
     if len(sys.argv) < 2:
-        print('用法: python notify.py "主题" ["正文"]')
+        print('Usage: python notify.py "subject" ["body"]')
         sys.exit(1)
     subject = sys.argv[1]
     body    = sys.argv[2] if len(sys.argv) > 2 else ''
